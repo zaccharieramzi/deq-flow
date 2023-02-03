@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from gma import Aggregate
+from deq_flow.core.gma import Aggregate
 
 
 class FlowHead(nn.Module):
@@ -11,7 +11,7 @@ class FlowHead(nn.Module):
         self.conv1 = nn.Conv2d(input_dim, hidden_dim, 3, padding=1)
         self.conv2 = nn.Conv2d(hidden_dim, 2, 3, padding=1)
         self.relu = nn.ReLU(inplace=True)
-    
+
     def forward(self, x):
         return self.conv2(self.relu(self.conv1(x)))
 
@@ -50,14 +50,14 @@ class SepConvGRU(nn.Module):
         hx = torch.cat([h, x], dim=1)
         z = torch.sigmoid(self.convz1(hx))
         r = torch.sigmoid(self.convr1(hx))
-        q = torch.tanh(self.convq1(torch.cat([r*h, x], dim=1)))        
+        q = torch.tanh(self.convq1(torch.cat([r*h, x], dim=1)))
         h = (1-z) * h + z * q
 
         # vertical
         hx = torch.cat([h, x], dim=1)
         z = torch.sigmoid(self.convz2(hx))
         r = torch.sigmoid(self.convr2(hx))
-        q = torch.tanh(self.convq2(torch.cat([r*h, x], dim=1)))       
+        q = torch.tanh(self.convq2(torch.cat([r*h, x], dim=1)))
         h = (1-z) * h + z * q
 
         return h
@@ -66,7 +66,7 @@ class SepConvGRU(nn.Module):
 class MotionEncoder(nn.Module):
     def __init__(self, args):
         super(MotionEncoder, self).__init__()
-        
+
         if args.large:
             c_dim_1 = 256 + 128
             c_dim_2 = 192 + 96
@@ -130,7 +130,7 @@ class UpdateBlock(nn.Module):
     def __init__(self, args, hidden_dim=128, input_dim=128):
         super(UpdateBlock, self).__init__()
         self.args = args
-    
+
         if args.tiny:
             cat_dim = 32
         elif args.large:
@@ -141,14 +141,14 @@ class UpdateBlock(nn.Module):
             cat_dim = 128 + 192
         else:
             cat_dim = 128
-        
+
         if args.old_version:
             flow_head_dim = min(256, 2*cat_dim)
         else:
             flow_head_dim = 2*cat_dim
 
         self.encoder = MotionEncoder(args)
-        
+
         if args.gma:
             self.gma = Aggregate(dim=cat_dim, dim_head=cat_dim, heads=1)
 
@@ -157,19 +157,19 @@ class UpdateBlock(nn.Module):
             self.gma = None
 
             gru_in_dim = cat_dim + hidden_dim
-        
+
         self.gru = SepConvGRU(hidden_dim=hidden_dim, input_dim=gru_in_dim)
         self.flow_head = FlowHead(hidden_dim, hidden_dim=flow_head_dim)
-            
+
     def forward(self, net, inp, corr, flow, attn=None, upsample=True):
         motion_features = self.encoder(flow, corr)
-        
+
         if self.gma:
             motion_features_global = self.gma(attn, motion_features)
             inp = torch.cat([inp, motion_features, motion_features_global], dim=1)
         else:
             inp = torch.cat([inp, motion_features], dim=1)
-        
+
         net = self.gru(net, inp)
         delta_flow = self.flow_head(net)
 

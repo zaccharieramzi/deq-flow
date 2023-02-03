@@ -3,18 +3,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from update import UpdateBlock
-from extractor import Encoder
-from corr import CorrBlock
-from utils.utils import bilinear_sampler, coords_grid
+from deq_flow.core.update import UpdateBlock
+from deq_flow.core.extractor import Encoder
+from deq_flow.core.corr import CorrBlock
+from deq_flow.core.utils.utils import bilinear_sampler, coords_grid
 
-from gma import Attention
+from deq_flow.core.gma import Attention
 
-from deq import get_deq
-from deq.norm import apply_weight_norm, reset_weight_norm
-from deq.layer_utils import DEQWrapper
+from deq_flow.core.deq import get_deq
+from deq_flow.core.deq.norm import apply_weight_norm, reset_weight_norm
+from deq_flow.core.deq.layer_utils import DEQWrapper
 
-from metrics import process_metrics
+from deq_flow.core.metrics import process_metrics
 
 
 try:
@@ -34,11 +34,11 @@ class DEQFlow(nn.Module):
     def __init__(self, args):
         super(DEQFlow, self).__init__()
         self.args = args
-        
+
         odim = 256
         args.corr_levels = 4
         args.corr_radius = 4
-    
+
         if args.tiny:
             odim = 64
             self.hidden_dim = hdim = 32
@@ -60,10 +60,10 @@ class DEQFlow(nn.Module):
             self.args.dropout = 0
 
         # feature network, context network, and update block
-        self.fnet = Encoder(output_dim=odim, norm_fn='instance', dropout=args.dropout)        
+        self.fnet = Encoder(output_dim=odim, norm_fn='instance', dropout=args.dropout)
         self.cnet = Encoder(output_dim=cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = UpdateBlock(self.args, hidden_dim=hdim)
-        
+
         self.mask = nn.Sequential(
             nn.Conv2d(hdim, 256, 3, padding=1),
             nn.ReLU(inplace=True),
@@ -78,7 +78,7 @@ class DEQFlow(nn.Module):
         # Added the following for DEQ
         if args.wnorm:
             apply_weight_norm(self.update_block)
-        
+
         DEQ = get_deq(args)
         self.deq = DEQ(args)
 
@@ -86,7 +86,7 @@ class DEQFlow(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.BatchNorm2d):
                 m.eval()
-    
+
     def _initialize_flow(self, img):
         """ Flow is represented as difference between two coordinate grids flow = coords1 - coords0"""
         N, _, H, W = img.shape
@@ -95,7 +95,7 @@ class DEQFlow(nn.Module):
 
         # optical flow computed as difference: flow = coords1 - coords0
         return coords0, coords1
-    
+
     def _upsample_flow(self, flow, mask):
         """ Upsample flow field [H/8, W/8, 2] -> [H, W, 2] using convex combination """
         N, _, H, W = flow.shape
@@ -108,18 +108,18 @@ class DEQFlow(nn.Module):
         up_flow = torch.sum(mask * up_flow, dim=2)
         up_flow = up_flow.permute(0, 1, 4, 2, 5, 3)
         return up_flow.reshape(N, 2, 8*H, 8*W)
-        
+
     def _decode(self, z_out, coords0):
         net, coords1 = z_out
         up_mask = .25 * self.mask(net)
         flow_up = self._upsample_flow(coords1 - coords0, up_mask)
-        
+
         return flow_up
-    
-    def forward(self, image1, image2, 
-            flow_gt=None, valid=None, fc_loss=None, 
-            flow_init=None, cached_result=None, 
-            writer=None, sradius_mode=False, 
+
+    def forward(self, image1, image2,
+            flow_gt=None, valid=None, fc_loss=None,
+            flow_init=None, cached_result=None,
+            writer=None, sradius_mode=False,
             **kwargs):
         """ Estimate optical flow between pair of frames """
 
@@ -134,7 +134,7 @@ class DEQFlow(nn.Module):
 
         # run the feature network
         with autocast(enabled=self.args.mixed_precision):
-            fmap1, fmap2 = self.fnet([image1, image2])        
+            fmap1, fmap2 = self.fnet([image1, image2])
 
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
@@ -156,29 +156,29 @@ class DEQFlow(nn.Module):
         bsz, _, H, W = inp.shape
         coords0, coords1 = self._initialize_flow(image1)
         net = torch.zeros(bsz, hdim, H, W, device=inp.device)
-        
+
         if cached_result:
             net, flow_pred_prev = cached_result
             coords1 = coords0 + flow_pred_prev
 
         if flow_init is not None:
             coords1 = coords1 + flow_init
-        
+
         if self.args.wnorm:
             reset_weight_norm(self.update_block) # Reset weights for WN
- 
+
         def func(h,c):
             if not self.args.all_grad:
                 c = c.detach()
-            with autocast(enabled=self.args.mixed_precision):                   
+            with autocast(enabled=self.args.mixed_precision):
                 new_h, delta_flow = self.update_block(h, inp, corr_fn(c), c-coords0, attn) # corr_fn(coords1) produces the index correlation volumes
             new_c = c + delta_flow  # F(t+1) = F(t) + \Delta(t)
             return new_h, new_c
-        
+
         deq_func = DEQWrapper(func, (net, coords1))
         z_init = deq_func.list2vec(net, coords1)
         log = (inp.get_device() == 0 and np.random.uniform(0,1) < 2e-3)
-        
+
         z_out, info = self.deq(deq_func, z_init, log, sradius_mode, **kwargs)
         flow_pred = [self._decode(z, coords0) for z in z_out]
 

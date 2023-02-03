@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import numpy as np
 from scipy import interpolate
 
-from .grid_sample import grid_sample
+from deq_flow.core.utils.grid_sample import grid_sample
 
 
 class InputPadder:
@@ -35,12 +35,12 @@ def forward_interpolate(flow):
 
     x1 = x0 + dx
     y1 = y0 + dy
-    
+
     x1 = x1.reshape(-1)
     y1 = y1.reshape(-1)
     dx = dx.reshape(-1)
     dy = dy.reshape(-1)
-    
+
     # valid = (x1 > 0.1 * wd) & (x1 < 0.9 * wd) & (y1 > 0.1 * ht) & (y1 < 0.9 * ht)
     valid = (x1 > 0) & (x1 < wd) & (y1 > 0) & (y1 < ht)
     x1 = x1[valid]

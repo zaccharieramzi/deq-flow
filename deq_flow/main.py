@@ -1,32 +1,27 @@
 from __future__ import division, print_function
 
-import sys
-
-sys.path.append('core')
-
 import argparse
 import os
 import time
 from functools import partial
 
-import cv2
-import datasets
+from deq_flow.core import datasets
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from torch.cuda.amp import GradScaler
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-import evaluate, viz
-from metrics import compute_epe,  merge_metrics
+from deq_flow import evaluate, viz
+from deq_flow.core.metrics import compute_epe,  merge_metrics
 
-from deq_flow import DEQFlow
-from deq.arg_utils import add_deq_args
+from deq_flow.core.deq_flow import DEQFlow
+from deq_flow.core.deq.arg_utils import add_deq_args
 
-from torch.cuda.amp import GradScaler
 
 
 # exclude extremly large displacements
@@ -39,7 +34,7 @@ TIME_FREQ = 500
 def fixed_point_correction(flow_preds, flow_gt, valid, gamma=0.8, max_flow=MAX_FLOW, cal_epe=True):
     """ Loss function defined over sequence of flow predictions """
 
-    n_predictions = len(flow_preds)    
+    n_predictions = len(flow_preds)
     flow_loss = 0.0
 
     # exlude invalid pixels and extremely large diplacements
@@ -50,7 +45,7 @@ def fixed_point_correction(flow_preds, flow_gt, valid, gamma=0.8, max_flow=MAX_F
         i_weight = gamma**(n_predictions - i - 1)
         i_loss = (flow_preds[i] - flow_gt).abs()
         flow_loss += i_weight * (valid[:, None] * i_loss).mean()
-    
+
     if cal_epe:
         epe = compute_epe(flow_preds[-1], flow_gt, valid)
         return flow_loss, epe
@@ -73,7 +68,7 @@ def fetch_optimizer(args, model):
             pct_start=0.05, cycle_momentum=False, anneal_strategy='linear')
 
     return optimizer, scheduler
-    
+
 
 class Logger:
     def __init__(self, scheduler):
@@ -87,7 +82,7 @@ class Logger:
         metrics_data = [self.running_loss[k]/SUM_FREQ for k in sorted_keys]
         training_str = "[Step {:6d}, lr {:.7f}]   ".format(self.total_steps+1, self.scheduler.get_last_lr()[0])
         metrics_str = ", ".join([f"{name}:{val:10.4f}" for (name, val) in zip(sorted_keys, metrics_data)])
-        
+
         # print the training status
         print(training_str + metrics_str)
 
@@ -129,7 +124,7 @@ def train(args):
             args.restore_name_per_run = 'checkpoints/' + args.restore_name + f'-run-{i}.pth'
         args.name_per_run = args.name + f'-run-{i}'
         best_chairs, best_sintel, best_kitti = train_once(args)
-        
+
         if best_chairs['epe'] < 100:
             stats['chairs'] = stats.get('chairs', [])  + [best_chairs['epe']]
         if best_sintel['clean-epe'] < 100:
@@ -138,12 +133,12 @@ def train(args):
         if best_kitti['epe'] < 100:
             stats['kitti epe'] = stats.get('kitti epe', []) + [best_kitti['epe']]
             stats['kitti f1']  = stats.get('kitti f1', []) + [best_kitti['f1']]
-        
+
         write_stats(args, stats)
-        
+
         # reset resume iters
         args.resume_iter = -1
-        
+
 
 def write_stats(args, stats):
     log_path = f'stats/{args.name}_{args.stage}_total_{args.total_run}_start_{args.start_run}.txt'
@@ -159,7 +154,7 @@ def train_once(args):
     if args.restore_name is not None:
         model.load_state_dict(torch.load(args.restore_name_per_run), strict=False)
         print(f'Load from {args.restore_name_per_run}')
-    
+
     if args.resume_iter > 0:
         restore_path = f'checkpoints/{args.resume_iter}_{args.name_per_run}.pth'
         model.load_state_dict(torch.load(restore_path), strict=False)
@@ -170,7 +165,7 @@ def train_once(args):
 
     if args.stage != 'chairs' and not args.active_bn:
         model.module.freeze_bn()
-    
+
     train_loader = datasets.fetch_dataloader(args)
     optimizer, scheduler = fetch_optimizer(args, model)
     scheduler.last_epoch = args.resume_iter if args.resume_iter > 0 else -1
@@ -185,7 +180,7 @@ def train_once(args):
     best_kitti = {"epe": 1e8, "f1": 1e8}
     should_keep_training = True
     while should_keep_training:
-        
+
         timer = 0
 
         for i_batch, data_blob in enumerate(train_loader):
@@ -196,34 +191,34 @@ def train_once(args):
                 stdv = np.random.uniform(0.0, 5.0)
                 image1 = (image1 + stdv * torch.randn(*image1.shape).cuda()).clamp(0.0, 255.0)
                 image2 = (image2 + stdv * torch.randn(*image2.shape).cuda()).clamp(0.0, 255.0)
-            
+
             start_time = time.time()
 
             fc_loss = partial(fixed_point_correction, gamma=args.gamma)
             loss, metrics = model(
                 image1, image2, flow, valid, fc_loss,
-                )            
+                )
 
             metrics = merge_metrics(metrics)
             scaler.scale(loss.mean()).backward()
-            
+
             end_time = time.time()
             timer += end_time - start_time
 
-            scaler.unscale_(optimizer)   
+            scaler.unscale_(optimizer)
             if args.clip > 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-            
+
             scaler.step(optimizer)
             scheduler.step()
             scaler.update()
 
             logger.push(metrics)
-            
+
             if (total_steps + 1) % args.time_interval == 0:
                 print(f'Exp {args.name_per_run} Average Time: {timer / args.time_interval}')
                 timer = 0
-            
+
             if (total_steps + 1) % args.save_interval == 0:
                 PATH = 'checkpoints/%d_%s.pth' % (total_steps+1, args.name_per_run)
                 torch.save(model.state_dict(), PATH)
@@ -249,11 +244,11 @@ def train_once(args):
                         results.update(res)
 
                 logger.write_dict(results)
-                
+
                 model.train()
                 if args.stage != 'chairs':
                     model.module.freeze_bn()
-            
+
             total_steps += 1
 
             if total_steps > args.num_steps:
@@ -270,14 +265,14 @@ def train_once(args):
 def val(args):
     model = nn.DataParallel(DEQFlow(args), device_ids=args.gpus)
     print("Parameter Count: %.3f M" % count_parameters(model))
-    
+
     if args.restore_ckpt is not None:
         model.load_state_dict(torch.load(args.restore_ckpt), strict=False)
         print(f'Load from {args.restore_ckpt}')
 
     model.cuda()
     model.eval()
-    
+
     for val_dataset in args.validation:
         if val_dataset == 'chairs':
             evaluate.validate_chairs(model.module, sradius_mode=args.sradius_mode)
@@ -292,13 +287,13 @@ def val(args):
 def test(args):
     model = nn.DataParallel(DEQFlow(args), device_ids=args.gpus)
     print("Parameter Count: %.3f M" % count_parameters(model))
-    
+
     if args.restore_ckpt is not None:
         model.load_state_dict(torch.load(args.restore_ckpt), strict=False)
 
     model.cuda()
     model.eval()
-    
+
     for test_dataset in args.test_set:
         if test_dataset == 'sintel':
             evaluate.create_sintel_submission(model.module, output_path=args.output_path,
@@ -310,13 +305,13 @@ def test(args):
 def visualize(args):
     model = nn.DataParallel(DEQFlow(args), device_ids=args.gpus)
     print("Parameter Count: %.3f M" % count_parameters(model))
-    
+
     if args.restore_ckpt is not None:
         model.load_state_dict(torch.load(args.restore_ckpt), strict=False)
 
     model.cuda()
     model.eval()
-    
+
     for viz_dataset in args.viz_set:
         for split in args.viz_split:
             if viz_dataset == 'sintel':
@@ -335,7 +330,7 @@ if __name__ == '__main__':
     parser.add_argument('--warm_start', action='store_true', help="Enable warm start.")
 
     parser.add_argument('--name', default='deq-flow', help="name your experiment")
-    parser.add_argument('--stage', help="determines which dataset to use for training") 
+    parser.add_argument('--stage', help="determines which dataset to use for training")
 
     parser.add_argument('--total_run', type=int, default=1, help="total number of runs")
     parser.add_argument('--start_run', type=int, default=1, help="begin from the given number of runs")
@@ -378,7 +373,7 @@ if __name__ == '__main__':
     parser.add_argument('--add_noise', action='store_true')
     parser.add_argument('--active_bn', action='store_true')
     parser.add_argument('--all_grad', action='store_true', help="Remove the gradient mask within DEQ func.")
-    
+
     # Add args for utilizing DEQ
     add_deq_args(parser)
     args = parser.parse_args()

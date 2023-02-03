@@ -1,13 +1,11 @@
 import sys
 
-sys.path.append('core')
-
 import argparse
 import copy
 import os
 import time
 
-import datasets
+from  deq_flow.core import datasets
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -15,8 +13,8 @@ import torch.nn.functional as F
 
 from PIL import Image
 
-from utils import frame_utils
-from utils.utils import InputPadder, forward_interpolate
+from deq_flow.core.utils import frame_utils
+from deq_flow.core.utils.utils import InputPadder, forward_interpolate
 
 
 MAX_FLOW = 400
@@ -28,7 +26,7 @@ def create_sintel_submission(model, warm_start=False, fixed_point_reuse=False, o
     model.eval()
     for dstype in ['clean', 'final']:
         test_dataset = datasets.MpiSintel(split='test', aug_params=None, dstype=dstype)
-        
+
         sequence_prev, flow_prev, fixed_point = None, None, None
         for test_id in range(len(test_dataset)):
             image1, image2, (sequence, frame) = test_dataset[test_id]
@@ -38,10 +36,10 @@ def create_sintel_submission(model, warm_start=False, fixed_point_reuse=False, o
 
             padder = InputPadder(image1.shape)
             image1, image2 = padder.pad(image1[None].cuda(), image2[None].cuda())
-            
+
             flow_low, flow_pr, info = model(image1, image2, flow_init=flow_prev, cached_result=fixed_point, **kwargs)
             flow = padder.unpad(flow_pr[0]).permute(1, 2, 0).cpu().numpy()
-            
+
             # You may choose to use some hacks here,
             # for example, warm start, i.e., reusing the f* part with a borderline check (forward_interpolate),
             # which was orignally taken by RAFT.
@@ -49,7 +47,7 @@ def create_sintel_submission(model, warm_start=False, fixed_point_reuse=False, o
             # in terms of clearer background estimation.
             if warm_start:
                 flow_prev = forward_interpolate(flow_low[0])[None].cuda()
-            
+
             # Note that the fixed point reuse usually does not improve performance.
             # It facilitates the convergence.
             # To improve performance, the borderline check like ``forward_interpolate'' is necessary.
@@ -87,7 +85,7 @@ def create_kitti_submission(model, output_path='kitti_submission'):
 
         output_filename = os.path.join(output_path, frame_id)
         frame_utils.writeFlowKITTI(output_filename, flow)
-        
+
 
 @torch.no_grad()
 def validate_chairs(model, **kwargs):
@@ -128,9 +126,9 @@ def validate_things(model, **kwargs):
         epe_list = []
         epe_w_mask_list = []
         rho_list = []
-        
+
         print(f'{dstype} length', len(val_dataset))
-        
+
         for val_id in range(len(val_dataset)):
             image1, image2, flow_gt, valid = val_dataset[val_id]
             image1 = image1[None].cuda()
@@ -141,18 +139,18 @@ def validate_things(model, **kwargs):
 
             flow_low, flow_pr, info = model(image1, image2, **kwargs)
             flow = padder.unpad(flow_pr[0]).cpu()
-            
+
             # exlude invalid pixels and extremely large diplacements
             mag = torch.sum(flow_gt**2, dim=0).sqrt()
             valid = (valid >= 0.5) & (mag < MAX_FLOW)
-            
+
             loss = (flow - flow_gt)**2
-            
+
             if torch.any(torch.isnan(loss)):
                 print(f'Bad prediction, {val_id}')
-            
+
             loss_w_mask = valid[None, :] * loss
-            
+
             if torch.any(torch.isnan(loss_w_mask)):
                 print(f'Bad prediction after mask, {val_id}')
                 print('Bad pixels num', torch.isnan(loss).sum())
@@ -164,7 +162,7 @@ def validate_things(model, **kwargs):
             epe_list.append(epe.view(-1).numpy())
             epe_w_mask_list.append(epe_w_mask.view(-1).numpy())
             rho_list.append(info['sradius'].mean().item())
-            
+
             if (val_id + 1) % 100 == 0:
                 print('EPE', np.mean(epe_list), 'EPE w/ mask', np.mean(epe_w_mask_list))
 
@@ -173,7 +171,7 @@ def validate_things(model, **kwargs):
         px1 = np.mean(epe_all<1) * 100
         px3 = np.mean(epe_all<3) * 100
         px5 = np.mean(epe_all<5) * 100
-        
+
         epe_all_w_mask = np.concatenate(epe_w_mask_list)
         epe_w_mask = np.mean(epe_all_w_mask)
         px1_w_mask = np.mean(epe_all_w_mask<1) * 100
@@ -184,7 +182,7 @@ def validate_things(model, **kwargs):
         print("Validation w/ mask (%s) EPE: %.3f, 1px: %.2f, 3px: %.2f, 5px: %.2f" % (dstype, epe_w_mask, px1_w_mask, px3_w_mask, px5_w_mask))
         results[dstype] = np.mean(epe_list)
         results[dstype+'_w_mask'] = np.mean(epe_w_mask_list)
-        
+
         if np.mean(rho_list) != 0:
             print("Spectral radius (%s): %f" % (dstype, np.mean(rho_list)))
 
@@ -274,7 +272,7 @@ def validate_kitti(model, **kwargs):
     best['epe'] = min(epe, best['epe'])
     best['f1'] = min(f1, best['f1'])
     print(f"Validation KITTI: EPE: {epe:.3f} ({best['epe']:.3f}), F1: {f1:.2f} ({best['f1']:.2f})")
-    
+
     if np.mean(rho_list) != 0:
         print("Spectral radius %.2f" % np.mean(rho_list))
 
