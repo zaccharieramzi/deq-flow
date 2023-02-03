@@ -129,3 +129,6 @@ dmypy.json
 
 # Data
 datasets/
+
+# Models
+deq-*.pt
