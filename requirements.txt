@@ -1,0 +1,12 @@
+pandas
+einops
+protobuf~=3.19.0
+tensorboard
+torch>=1.10
+torchvision>=0.11.0
+torchaudio>=0.10.0
+tqdm
+yacs
+termcolor
+opencv-python
+scipy
