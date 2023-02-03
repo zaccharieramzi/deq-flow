@@ -10,3 +10,4 @@ yacs
 termcolor
 opencv-python
 scipy
+matplotlib
