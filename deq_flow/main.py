@@ -279,9 +279,43 @@ def val(args):
         elif val_dataset == 'things':
             evaluate.validate_things(model.module, sradius_mode=args.sradius_mode)
         elif val_dataset == 'sintel':
-            evaluate.validate_sintel(model.module, sradius_mode=args.sradius_mode)
+            res_sintel = evaluate.validate_sintel(model.module, sradius_mode=args.sradius_mode)
+            perf = res_sintel['final-epe']
+            try:
+                perf = perf.cpu().numpy().item()
+            except AttributeError:
+                perf = perf
+            df_results = pd.DataFrame({
+                'perf': perf,
+                'f_thres_val': args.eval_f_thres,
+                'solver': args.f_solver,
+            }, index=[0])
+            write_header = not Path(args.results_name).is_file()
+            df_results.to_csv(
+                args.results_name,
+                mode='a',
+                header=write_header,
+                index=False,
+            )
         elif val_dataset == 'kitti':
-            evaluate.validate_kitti(model.module, sradius_mode=args.sradius_mode)
+            res_kitti = evaluate.validate_kitti(model.module, sradius_mode=args.sradius_mode)
+            perf = res_kitti['kitti-epe']
+            try:
+                perf = perf.cpu().numpy().item()
+            except AttributeError:
+                perf = perf
+            df_results = pd.DataFrame({
+                'perf': perf,
+                'f_thres_val': args.eval,
+                'solver': args.f_solver,
+            }, index=[0])
+            write_header = not Path(args.results_name).is_file()
+            df_results.to_csv(
+                args.results_name,
+                mode='a',
+                header=write_header,
+                index=False,
+            )
 
 
 def test(args):
@@ -374,6 +408,7 @@ if __name__ == '__main__':
     parser.add_argument('--active_bn', action='store_true')
     parser.add_argument('--all_grad', action='store_true', help="Remove the gradient mask within DEQ func.")
 
+    parser.add_argument('--results_name', type=str, default='results.csv')
     # Add args for utilizing DEQ
     add_deq_args(parser)
     args = parser.parse_args()
