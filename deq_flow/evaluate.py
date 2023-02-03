@@ -8,6 +8,7 @@ import time
 from  deq_flow.core import datasets
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn.functional as F
 
