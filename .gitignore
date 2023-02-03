@@ -131,4 +131,4 @@ dmypy.json
 datasets/
 
 # Models
-deq-*.pt
+deq-*.pth
