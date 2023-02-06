@@ -310,7 +310,7 @@ def val(args):
             df_results = pd.DataFrame({
                 'perf': perf,
                 'dataset': val_dataset,
-                'f_thres_val': args.eval,
+                'f_thres_val': args.eval_f_thres,
                 'solver': args.f_solver,
             }, index=[0])
             write_header = not Path(args.results_name).is_file()
