@@ -302,7 +302,7 @@ def val(args):
             )
         elif val_dataset == 'kitti':
             res_kitti = evaluate.validate_kitti(model.module, sradius_mode=args.sradius_mode)
-            perf = res_kitti['kitti-epe']
+            perf = res_kitti['kitti-f1']
             try:
                 perf = perf.cpu().numpy().item()
             except AttributeError:
