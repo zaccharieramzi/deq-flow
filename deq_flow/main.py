@@ -283,15 +283,12 @@ def val(args):
         elif val_dataset == 'sintel':
             res_sintel = evaluate.validate_sintel(model.module, sradius_mode=args.sradius_mode)
             perf_clean = res_sintel['clean']
-            perf_final = res_sintel['final']
             try:
-                perf_clean = perf_clean.cpu().numpy().item()
-                perf_final = perf_final.cpu().numpy().item()
+                perf = perf.cpu().numpy().item()
             except AttributeError:
-                pass
+                perf = perf
             df_results = pd.DataFrame({
-                'perf_clean': perf_clean,
-                'perf_final': perf_final,
+                'perf': perf,
                 'f_thres_val': args.eval_f_thres,
                 'solver': args.f_solver,
             }, index=[0])
