@@ -281,7 +281,12 @@ def val(args):
         elif val_dataset == 'things':
             evaluate.validate_things(model.module, sradius_mode=args.sradius_mode)
         elif val_dataset == 'sintel':
-            res_sintel = evaluate.validate_sintel(model.module, sradius_mode=args.sradius_mode)
+            res_sintel = evaluate.validate_sintel(
+                model.module,
+                warm_start=args.warm_start,
+                fixed_point_reuse=args.fixed_point_reuse,
+                sradius_mode=args.sradius_mode,
+            )
             perf = res_sintel['clean']
             try:
                 perf = perf.cpu().numpy().item()
@@ -292,6 +297,8 @@ def val(args):
                 'dataset': val_dataset,
                 'f_thres_val': args.eval_f_thres,
                 'solver': args.f_solver,
+                'warm_start': args.warm_start,
+                'fixed_point_reuse': args.fixed_point_reuse,
             }, index=[0])
             write_header = not Path(args.results_name).is_file()
             df_results.to_csv(
