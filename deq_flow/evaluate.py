@@ -191,7 +191,7 @@ def validate_things(model, **kwargs):
 
 
 @torch.no_grad()
-def validate_sintel(model, **kwargs):
+def validate_sintel(model, warm_start=False, fixed_point_reuse=False, **kwargs):
     """ Peform validation using the Sintel (train) split """
     model.eval()
     best = kwargs.get("best", {"clean-epe":1e8, "final-epe":1e8})
@@ -202,20 +202,43 @@ def validate_sintel(model, **kwargs):
         rho_list = []
         info = {"sradius": None, "cached_result": None}
 
+        sequence_prev, flow_prev, fixed_point = None, None, None
         for val_id in range(len(val_dataset)):
-            image1, image2, flow_gt, _ = val_dataset[val_id]
+            image1, image2, flow_gt, (sequence, frame) = val_dataset[val_id]
+            if sequence != sequence_prev:
+                flow_prev = None
+                fixed_point = None
             image1 = image1[None].cuda()
             image2 = image2[None].cuda()
 
             padder = InputPadder(image1.shape)
             image1, image2 = padder.pad(image1, image2)
 
-            flow_low, flow_pr, info = model(image1, image2, **kwargs)
+            flow_low, flow_pr, info = model(image1, image2, flow_init=flow_prev, cached_result=fixed_point, **kwargs)
             flow = padder.unpad(flow_pr[0]).cpu()
+
+            # You may choose to use some hacks here,
+            # for example, warm start, i.e., reusing the f* part with a borderline check (forward_interpolate),
+            # which was orignally taken by RAFT.
+            # This trick usually (only) improves the optical flow estimation on the ``ambush_1'' sequence,
+            # in terms of clearer background estimation.
+            if warm_start:
+                flow_prev = forward_interpolate(flow_low[0])[None].cuda()
+
+            # Note that the fixed point reuse usually does not improve performance.
+            # It facilitates the convergence.
+            # To improve performance, the borderline check like ``forward_interpolate'' is necessary.
+            if fixed_point_reuse:
+                net, flow_pred_low = info['cached_result']
+                flow_pred_low = forward_interpolate(flow_pred_low[0])[None].cuda()
+                fixed_point = (net, flow_pred_low)
+
 
             epe = torch.sum((flow - flow_gt)**2, dim=0).sqrt()
             epe_list.append(epe.view(-1).numpy())
             rho_list.append(info['sradius'].mean().item())
+
+            sequence_prev = sequence
 
         epe_all = np.concatenate(epe_list)
         epe = np.mean(epe_all)
