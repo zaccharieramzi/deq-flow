@@ -197,14 +197,14 @@ def validate_sintel(model, warm_start=False, fixed_point_reuse=False, **kwargs):
     best = kwargs.get("best", {"clean-epe":1e8, "final-epe":1e8})
     results = {}
     for dstype in ['clean', 'final']:
-        val_dataset = datasets.MpiSintel(split='training', dstype=dstype)
+        val_dataset = datasets.MpiSintel(split='training', dstype=dstype, return_extra_info=True)
         epe_list = []
         rho_list = []
         info = {"sradius": None, "cached_result": None}
 
         sequence_prev, flow_prev, fixed_point = None, None, None
         for val_id in range(len(val_dataset)):
-            image1, image2, flow_gt, (sequence, frame) = val_dataset[val_id]
+            image1, image2, flow_gt, _, (sequence, frame) = val_dataset[val_id]
             if sequence != sequence_prev:
                 flow_prev = None
                 fixed_point = None
