@@ -16,7 +16,7 @@ from deq_flow.core.utils.augmentor import FlowAugmentor, SparseFlowAugmentor
 
 
 class FlowDataset(data.Dataset):
-    def __init__(self, aug_params=None, sparse=False):
+    def __init__(self, aug_params=None, sparse=False, return_extra_info=False):
         self.augmentor = None
         self.sparse = sparse
         if aug_params is not None:
@@ -30,6 +30,7 @@ class FlowDataset(data.Dataset):
         self.flow_list = []
         self.image_list = []
         self.extra_info = []
+        self.return_extra_info = return_extra_info
 
     def __getitem__(self, index):
 
@@ -87,7 +88,10 @@ class FlowDataset(data.Dataset):
         else:
             valid = (flow[0].abs() < 1000) & (flow[1].abs() < 1000)
 
-        return img1, img2, flow, valid.float()
+        if self.return_extra_info:
+            return img1, img2, flow, valid.float(), self.extra_info[index]
+        else:
+            return img1, img2, flow, valid.float()
 
 
     def __rmul__(self, v):
@@ -100,8 +104,8 @@ class FlowDataset(data.Dataset):
 
 
 class MpiSintel(FlowDataset):
-    def __init__(self, aug_params=None, split='training', root='datasets/Sintel', dstype='clean'):
-        super(MpiSintel, self).__init__(aug_params)
+    def __init__(self, aug_params=None, return_extra_info=False, split='training', root='datasets/Sintel', dstype='clean'):
+        super(MpiSintel, self).__init__(aug_params, return_extra_info=return_extra_info)
         flow_root = osp.join(root, split, 'flow')
         image_root = osp.join(root, split, dstype)
 
