@@ -191,14 +191,20 @@ def validate_things(model, **kwargs):
 
 
 @torch.no_grad()
-def validate_sintel(model, warm_start=False, fixed_point_reuse=False, **kwargs):
+def validate_sintel(model, warm_start=False, fixed_point_reuse=False, return_cvg=False,**kwargs):
     """ Peform validation using the Sintel (train) split """
     model.eval()
     best = kwargs.get("best", {"clean-epe":1e8, "final-epe":1e8})
     results = {}
+    cvg = {
+        "abs": {},
+        "rel": {},
+    }
     for dstype in ['clean', 'final']:
         val_dataset = datasets.MpiSintel(split='training', dstype=dstype, return_extra_info=True)
         epe_list = []
+        rel_list = []
+        abs_list = []
         rho_list = []
         info = {"sradius": None, "cached_result": None}
 
@@ -236,6 +242,8 @@ def validate_sintel(model, warm_start=False, fixed_point_reuse=False, **kwargs):
 
             epe = torch.sum((flow - flow_gt)**2, dim=0).sqrt()
             epe_list.append(epe.view(-1).numpy())
+            rel_list.apennd(info["rel_lowest"].item())
+            abs_list.apennd(info["abs_lowest"].item())
             rho_list.append(info['sradius'].mean().item())
 
             sequence_prev = sequence
@@ -249,10 +257,14 @@ def validate_sintel(model, warm_start=False, fixed_point_reuse=False, **kwargs):
         best[dstype+'-epe'] = min(epe, best[dstype+'-epe'])
         print(f"Validation ({dstype}) EPE: {epe:.3f} ({best[dstype+'-epe']:.3f}), 1px: {px1:.2f}, 3px: {px3:.2f}, 5px: {px5:.2f}")
         results[dstype] = np.mean(epe_list)
+        cvg["rel"][dstype] = np.mean(rel_list)
+        cvg["abs"][dstype] = np.mean(abs_list)
 
         if np.mean(rho_list) != 0:
             print("Spectral radius (%s): %.2f" % (dstype, np.mean(rho_list)))
 
+    if return_cvg:
+        return results, cvg
     return results
 
 

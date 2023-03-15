@@ -190,5 +190,5 @@ class DEQFlow(nn.Module):
         else:
             (net, coords1), flow_up = z_out[-1], flow_pred[-1]
 
-            return coords1 - coords0, flow_up, {"sradius": info['sradius'], "cached_result": (net, coords1 - coords0)}
+            return coords1 - coords0, flow_up, {"sradius": info['sradius'], "cached_result": (net, coords1 - coords0), "abs_lowest": info["abs_lowest"], "rel_lowest": info["rel_lowest"]}
 

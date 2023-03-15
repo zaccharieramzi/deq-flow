@@ -281,19 +281,24 @@ def val(args):
         elif val_dataset == 'things':
             evaluate.validate_things(model.module, sradius_mode=args.sradius_mode)
         elif val_dataset == 'sintel':
-            res_sintel = evaluate.validate_sintel(
+            res_sintel, cvg = evaluate.validate_sintel(
                 model.module,
                 warm_start=args.warm_start,
                 fixed_point_reuse=args.fixed_point_reuse,
                 sradius_mode=args.sradius_mode,
+                return_cvg=True,
             )
             perf = res_sintel['clean']
+            rel_cvg = cvg["rel"]["clean"]
+            abs_cvg = cvg["abs"]["clean"]
             try:
                 perf = perf.cpu().numpy().item()
             except AttributeError:
                 perf = perf
             df_results = pd.DataFrame({
                 'perf': perf,
+                'cvg_rel': rel_cvg,
+                'cvg_abs': abs_cvg,
                 'dataset': val_dataset,
                 'f_thres_val': args.eval_f_thres,
                 'solver': args.f_solver,
