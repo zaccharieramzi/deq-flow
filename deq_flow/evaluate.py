@@ -242,8 +242,8 @@ def validate_sintel(model, warm_start=False, fixed_point_reuse=False, return_cvg
 
             epe = torch.sum((flow - flow_gt)**2, dim=0).sqrt()
             epe_list.append(epe.view(-1).numpy())
-            rel_list.apennd(info["rel_lowest"].item())
-            abs_list.apennd(info["abs_lowest"].item())
+            rel_list.append(info["rel_lowest"].item())
+            abs_list.append(info["abs_lowest"].item())
             rho_list.append(info['sradius'].mean().item())
 
             sequence_prev = sequence
