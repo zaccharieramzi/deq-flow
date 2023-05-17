@@ -12,6 +12,7 @@ pip install .
 
 ## Reproducing Fig. 2 of the paper
 In order to reproduce the optical flow part of Fig 2. of the paper you will need to download the [data](http://sintel.is.tue.mpg.de/) and the [model weights](https://drive.google.com/drive/folders/1a_eX_wYN1qTw2Rj1naEXhcsG4D3KKxFw?usp=sharing).
+These weights come from the original paper that introduced DEQ-Flow.
 
 You can then run the following command to reproduce the results with `f_thres` the test-time number of iterations:
 
